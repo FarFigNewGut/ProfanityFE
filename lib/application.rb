@@ -93,6 +93,11 @@ class Application
     DotCommand.new(name: 'draghl',
                    help: ['.draghl            Toggle live highlight while dragging'],
                    handler: proc { handle_dot_draghl }),
+    DotCommand.new(name: 'blanklines',
+                   args: :optional,
+                   help: ['.blanklines        Toggle showing blank lines from the game',
+                          '.blanklines <on|off> Show or hide blank lines explicitly'],
+                   handler: proc { |arg| handle_dot_blanklines(arg) }),
     DotCommand.new(name: 'scrollcfg',
                    help: ['.scrollcfg         Configure mouse scroll wheel'],
                    handler: proc { @mouse_scroll.start_configuration }),
@@ -118,6 +123,10 @@ class Application
   # The settings.json key under which the categories each effects window
   # shows are saved, as +{ window key => [category names] }+.
   EFFECTS_SETTING_KEY = 'EFFECTS_CATEGORIES'
+
+  # The settings.json key under which whether the game's blank lines are
+  # shown is saved, as a Boolean (shown when absent).
+  BLANK_LINES_SETTING_KEY = 'BLANK_LINES'
 
   # How long .key waits for a key press before giving up, in milliseconds.
   DOT_KEY_TIMEOUT_MS = 5000
@@ -456,6 +465,56 @@ class Application
             '* Drag highlight: OFF (highlight appears when you release)'
           end
     write_to_client(msg)
+  end
+
+  # +.blanklines+: show or hide the blank lines the game sends between
+  # lines of text. With no argument, toggle; +on+ or +off+ (any case) sets
+  # it. The choice is applied to the running {GameTextProcessor} (if the
+  # server thread has started), remembered for the next session in
+  # settings.json under {BLANK_LINES_SETTING_KEY}, and the new state shown.
+  # Any other argument changes nothing and says how to use the command.
+  #
+  # @param arg [String, nil] +on+, +off+ or nil to toggle
+  # @return [void]
+  def handle_dot_blanklines(arg)
+    choice = arg.to_s.strip.downcase
+    value = case choice
+            when '' then !blank_lines_setting
+            when 'on' then true
+            when 'off' then false
+            else
+              write_to_client("* Usage: .blanklines [on|off] (now #{blank_lines_setting ? 'on' : 'off'})")
+              return
+            end
+    @blank_lines = value
+    @processor&.blank_lines_enabled = value
+    save_blank_lines(value)
+    write_to_client(value ? '* Blank lines shown' : '* Blank lines hidden')
+  end
+
+  # Whether the game's blank lines are shown: the value of this session,
+  # else the one saved in settings.json, else on. Anything saved that is
+  # not +false+ counts as on.
+  #
+  # @return [Boolean]
+  def blank_lines_setting
+    return @blank_lines unless @blank_lines.nil?
+
+    @blank_lines = ProfanitySettings.load_setting(BLANK_LINES_SETTING_KEY, true) != false
+  rescue StandardError => e
+    ProfanityLog.write('settings', "Could not read the blank lines setting: #{e.message}")
+    @blank_lines = true
+  end
+
+  # Remember whether blank lines are shown, in settings.json. A failure to
+  # write is logged and does not interrupt the game.
+  #
+  # @param value [Boolean]
+  # @return [void]
+  def save_blank_lines(value)
+    ProfanitySettings.save_setting(BLANK_LINES_SETTING_KEY, value)
+  rescue StandardError => e
+    ProfanityLog.write('settings', "Could not save the blank lines setting: #{e.message}")
   end
 
   # Reload the settings file. A file that fails to load changes nothing,
@@ -810,7 +869,8 @@ class Application
       boot_profiler: @boot_profiler,
       speech_timestamps: @cli_options[:speech_ts],
       clock: @clock,
-      game_rules: @game_rules
+      game_rules: @game_rules,
+      blank_lines: blank_lines_setting
     )
     # The server thread only reports how the connection ended; the input
     # loop picks that up and ends the session on the main thread.

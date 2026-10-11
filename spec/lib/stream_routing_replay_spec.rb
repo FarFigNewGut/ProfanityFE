@@ -10,7 +10,8 @@
 # bare pops, atmospherics, and combat closed by <popStream id="combat" />
 # (once more than it was opened). The expected windows are the ones the old
 # design (every pop returns to main) put these lines in; stream nesting must
-# not move any of them.
+# not move any of them. Blank lines the game sends between main lines show
+# as empty rows (see PromptTracker#flush_pending_blank).
 
 require_relative '../spec_helper'
 require 'rexml/document'
@@ -79,6 +80,7 @@ RSpec.describe 'Stream routing of a captured game stream' do
         "Fidon rummages through a scuffed traveler's pack but it's clear he hasn't a clue if what he is looking for is there.",
         '>',
         'You touch Fidon.',
+        '',
         'You sense a successful empathic link has been forged between you and Fidon.',
         "You feel the burning fire of pain and suffering building slowly as you instinctively draw out the truth behind Fidon's injuries.",
         'You sense nothing wrong with Fidon.',
@@ -88,6 +90,7 @@ RSpec.describe 'Stream routing of a captured game stream' do
         'You begin to lecture Throve on the proper use of the Scholarship skill.',
         '>',
         'You touch Throve.',
+        '',
         'You sense a successful empathic link has been forged between you and Throve.',
         "You feel the burning fire of pain and suffering building slowly as you instinctively draw out the truth behind Throve's injuries.",
         '>',

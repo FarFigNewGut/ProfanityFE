@@ -35,7 +35,7 @@ RSpec.describe 'Dot-commands typed on the command line' do
     'reload' => :none, 'layout' => :required, 'resize' => :none, 'tab' => :optional,
     'arrow' => :none, 'links' => :none, 'select' => :none, 'draghl' => :none,
     'scrollcfg' => :none, 'unhighlight' => :required, 'highlight' => :optional,
-    'effects' => :optional,
+    'effects' => :optional, 'blanklines' => :optional,
     'help' => :none
   }.freeze
 
@@ -219,6 +219,82 @@ RSpec.describe 'Dot-commands typed on the command line' do
       app.execute_command('.draghl')
       expect(app.mouse_scroll.drag_highlight).to be false
       expect(shown.last).to start_with('* Drag highlight: OFF')
+    end
+
+    describe '.blanklines' do
+      it 'turns blank lines off, saves it, and says so; then on again' do
+        app.execute_command('.blanklines')
+        expect(ProfanitySettings).to have_received(:save_setting).with('BLANK_LINES', false)
+        expect(shown.last).to eq '* Blank lines hidden'
+
+        app.execute_command('.blanklines')
+        expect(ProfanitySettings).to have_received(:save_setting).with('BLANK_LINES', true)
+        expect(shown.last).to eq '* Blank lines shown'
+      end
+
+      it 'starts from the saved setting' do
+        allow(ProfanitySettings).to receive(:load_setting).with('BLANK_LINES', true).and_return(false)
+
+        app.execute_command('.blanklines')
+
+        expect(shown.last).to eq '* Blank lines shown'
+      end
+
+      it 'is on when nothing was saved' do
+        expect(app.send(:blank_lines_setting)).to be true
+      end
+
+      it 'sets blank lines shown with on' do
+        app.execute_command('.blanklines off')
+        app.execute_command('.blanklines ON')
+
+        expect(shown.last).to eq '* Blank lines shown'
+        expect(ProfanitySettings).to have_received(:save_setting).with('BLANK_LINES', true)
+      end
+
+      it 'sets the state with on or off, in any case, without toggling' do
+        app.execute_command('.blanklines OFF')
+        app.execute_command('.blanklines off')
+
+        expect(shown.last).to eq '* Blank lines hidden'
+        expect(ProfanitySettings).to have_received(:save_setting).with('BLANK_LINES', false).twice
+      end
+
+      it 'changes nothing for another argument, and says how to use it' do
+        app.execute_command('.blanklines maybe')
+
+        expect(shown.last).to eq '* Usage: .blanklines [on|off] (now on)'
+        expect(ProfanitySettings).not_to have_received(:save_setting)
+      end
+
+      it 'applies the choice to the running game text processor' do
+        processor = instance_double(GameTextProcessor)
+        allow(processor).to receive(:blank_lines_enabled=)
+        app.instance_variable_set(:@processor, processor)
+
+        app.execute_command('.blanklines')
+
+        expect(processor).to have_received(:blank_lines_enabled=).with(false)
+      end
+
+      [[nil, true], [false, false], [true, true]].each do |saved, expected|
+        it "builds the game text processor with #{expected} when #{saved.inspect} is saved" do
+          allow(ProfanitySettings).to receive(:load_setting).with('BLANK_LINES', true) { saved.nil? ? true : saved }
+          app.connection.attach(StringIO.new)
+          allow(GameTextProcessor).to receive(:new).and_call_original
+
+          app.send(:start_server_thread).join
+
+          expect(GameTextProcessor).to have_received(:new).with(a_hash_including(blank_lines: expected))
+        end
+      end
+
+      it 'keeps running when the setting cannot be saved' do
+        allow(ProfanitySettings).to receive(:save_setting).and_raise(Errno::EACCES)
+
+        expect { app.execute_command('.blanklines') }.not_to raise_error
+        expect(shown.last).to eq '* Blank lines hidden'
+      end
     end
 
     it '.scrollcfg starts the scroll wheel calibration' do
@@ -502,6 +578,8 @@ RSpec.describe 'Dot-commands typed on the command line' do
         '.links             Toggle in-game link highlighting',
         '.select            Toggle drag-to-select without links',
         '.draghl            Toggle live highlight while dragging',
+        '.blanklines        Toggle showing blank lines from the game',
+        '.blanklines <on|off> Show or hide blank lines explicitly',
         '.scrollcfg         Configure mouse scroll wheel',
         '.unhighlight <text> Remove an inline highlight',
         '.highlight <text>   Add cyan highlight for text (session only)',
@@ -517,8 +595,8 @@ RSpec.describe 'Dot-commands typed on the command line' do
       rows = main.rows.map(&:rstrip).reject(&:empty?)
       expect(rows.first).to eq '*'
       expect(rows.last).to eq '*'
-      # 18 original help lines, 2 more for .effects and the two banner rows
-      expect(rows.length).to eq 22
+      # 18 original help lines, 2 more for .effects, 2 for .blanklines and the two banner rows
+      expect(rows.length).to eq 24
     end
   end
 end
